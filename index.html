@@ -541,7 +541,11 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.11.6/ffmpeg.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    if (typeof FFmpeg === 'undefined' || !FFmpeg.createFFmpeg) {
+    alert("FFmpeg failed to load. Please check your connection or use a different browser.");
+    return;
+}
     <script>
         // Global variables
         let captions = [];
