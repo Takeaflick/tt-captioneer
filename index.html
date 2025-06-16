@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TikTok Caption Editor</title>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 30px;
+        }
+        
+        .upload-area {
+            background: #3a3a3a;
+            border: 2px dashed #666;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            border-color: #0095f6;
+            background: #404040;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+        
+        .file-input-label {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #0095f6;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        
+        .file-input-label:hover {
+            background: #0081d6;
+        }
+        
+        .video-container {
+            position: relative;
+            display: inline-block;
+            margin: 20px 0;
+            width: 100%;
+            text-align: center;
+        }
+        
+        video {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 10px;
+            background: #000;
+        }
+        
+        .caption-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            color: black;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: none;
+            pointer-events: none;
+            max-width: 80%;
+            text-align: center;
+        }
+        
+        .controls {
+            background: #3a3a3a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        input[type="text"], input[type="number"] {
+            background: #4a4a4a;
+            border: 1px solid #666;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        
+        button {
+            background: #0095f6;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #0081d6;
+        }
+        
+        .caption-list {
+            background: #4a4a4a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .caption-item {
+            background: #5a5a5a;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .export-button {
+            background: #28a745;
+            font-size: 18px;
+            padding: 12px 30px;
+            margin-top: 20px;
+            width: 100%;
+        }
+        
+        .export-button:hover {
+            background: #218838;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .error-message {
+            background: #dc3545;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .info-message {
+            background: #17a2b8;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 TikTok Style Video Caption Editor</h1>
+        
+        <div id="uploadSection">
+            <div class="upload-area">
+                <h2>Upload Your Video</h2>
+                <p>Select a video file from your computer</p>
+                
+                <div class="file-input-wrapper">
+                    <input type="file" id="videoFile" accept="video/*">
+                    <label for="videoFile" class="file-input-label">Choose Video File</label>
+                </div>
+                
+                <p style="margin-top: 20px; color: #888; font-size: 14px;">
+                    Supports MP4, MOV, WebM, and other video formats
+                </p>
+            </div>
+            
+            <div class="info-message">
+                <strong>Important:</strong> For this editor to work properly, you need to either:
+                <ul style="margin: 10px 0;">
+                    <li>Run this file from a web server (not file://), OR</li>
+                    <li>Use Chrome with the flag: --allow-file-access-from-files</li>
+                    <li>Or upload it to a web hosting service</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div id="editorSection" class="hidden">
+            <div class="video-container">
+                <video id="videoPlayer" controls></video>
+                <div class="caption-overlay" id="captionOverlay"></div>
+            </div>
+            
+            <div class="controls">
+                <h3>Add Captions</h3>
+                <div class="control-group">
+                    <input type="text" id="captionText" placeholder="Enter caption text" style="width: 300px;">
+                    <input type="number" id="startTime" placeholder="Start (s)" value="0" min="0" step="0.1" style="width: 80px;">
+                    <input type="number" id="endTime" placeholder="End (s)" value="3" min="0" step="0.1" style="width: 80px;">
+                    <button onclick="addCaption()">Add Caption</button>
+                </div>
+                
+                <div class="caption-list" id="captionList">
+                    <p style="color: #888;">No captions added yet</p>
+                </div>
+                
+                <button class="export-button" onclick="startExport()">Export Video with Captions</button>
+            </div>
+        </div>
+        
+        <div id="errorMessage" class="error-message hidden"></div>
+    </div>
+
+    <script>
+        let videoFile = null;
+        let videoPlayer = null;
+        let captions = [];
+        let videoReady = false;
+        let objectURL = null;
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page initialized');
+            
+            videoPlayer = document.getElementById('videoPlayer');
+            
+            // Set up file input handler
+            const fileInput = document.getElementById('videoFile');
+            fileInput.onchange = handleFileSelect;
+            
+            // Set up video event listeners
+            videoPlayer.onloadedmetadata = videoLoaded;
+            videoPlayer.onerror = videoError;
+            videoPlayer.ontimeupdate = updateCaption;
+        });
+
+        function handleFileSelect(event) {
+            console.log('File selected');
+            const file = event.target.files[0];
+            
+            if (!file) {
+                console.log('No file selected');
+                return;
+            }
+            
+            console.log('File info:', file.name, file.type, (file.size / 1024 / 1024).toFixed(2) + 'MB');
+            
+            // Store the file
+            videoFile = file;
+            
+            // Try multiple methods to load the video
+            loadVideoWithFallback(file);
+        }
+
+        function loadVideoWithFallback(file) {
+            console.log('Attempting to load video...');
+            
+            // Method 1: Try createObjectURL first (preferred for large files)
+            try {
+                if (objectURL) {
+                    URL.revokeObjectURL(objectURL);
+                }
+                
+                objectURL = URL.createObjectURL(file);
+                console.log('Created object URL:', objectURL);
+                
+                videoPlayer.src = objectURL;
+                
+                // If this works, show the editor
+                videoPlayer.oncanplay = function() {
+                    console.log('Video can play');
+                    showEditor();
+                };
+                
+            } catch (error) {
+                console.error('createObjectURL failed:', error);
+                
+                // Method 2: Fallback to FileReader for smaller files
+                if (file.size < 50 * 1024 * 1024) { // Less than 50MB
+                    console.log('Trying FileReader method...');
+                    loadWithFileReader(file);
+                } else {
+                    showError('File is too large. Please use a smaller video or run this from a web server.');
+                }
+            }
+        }
+
+        function loadWithFileReader(file) {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                console.log('File read with FileReader');
+                videoPlayer.src = e.target.result;
+                showEditor();
+            };
+            
+            reader.onerror = function() {
+                console.error('FileReader failed');
+                showError('Could not read video file. Please try a different file.');
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        function showEditor() {
+            document.getElementById('uploadSection').classList.add('hidden');
+            document.getElementById('editorSection').classList.remove('hidden');
+        }
+
+        function videoLoaded() {
+            console.log('Video metadata loaded');
+            console.log('Duration:', videoPlayer.duration);
+            console.log('Dimensions:', videoPlayer.videoWidth, 'x', videoPlayer.videoHeight);
+            
+            videoReady = true;
+            
+            // Update end time max value
+            document.getElementById('endTime').max = videoPlayer.duration;
+            document.getElementById('startTime').max = videoPlayer.duration;
+            document.getElementById('endTime').value = Math.min(3, videoPlayer.duration);
+            
+            // Hide any error messages
+            document.getElementById('errorMessage').classList.add('hidden');
+        }
+
+        function videoError(e) {
+            console.error('Video error event');
+            
+            // Get more specific error information
+            const error = videoPlayer.error;
+            if (error) {
+                console.error('Error code:', error.code);
+                console.error('Error message:', error.message);
+                
+                switch(error.code) {
+                    case 1:
+                        showError('Video loading aborted');
+                        break;
+                    case 2:
+                        showError('Network error while loading video');
+                        break;
+                    case 3:
+                        showError('Video decoding error. Try a different format.');
+                        break;
+                    case 4:
+                        showError('Video format not supported. Try MP4 or WebM.');
+                        break;
+                    default:
+                        showError('Unknown video error. Please try a different file.');
+                }
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function addCaption() {
+            const text = document.getElementById('captionText').value.trim();
+            const start = parseFloat(document.getElementById('startTime').value);
+            const end = parseFloat(document.getElementById('endTime').value);
+            
+            if (!text) {
+                showError('Please enter caption text');
+                return;
+            }
+            
+            if (start >= end) {
+                showError('End time must be after start time');
+                return;
+            }
+            
+            if (end > videoPlayer.duration) {
+                showError('End time exceeds video duration');
+                return;
+            }
+            
+            captions.push({ text, start, end });
+            updateCaptionList();
+            
+            // Clear inputs and prepare for next caption
+            document.getElementById('captionText').value = '';
+            document.getElementById('startTime').value = end;
+            document.getElementById('endTime').value = Math.min(end + 3, videoPlayer.duration);
+            
+            // Hide error message
+            document.getElementById('errorMessage').classList.add('hidden');
+        }
+
+        function updateCaptionList() {
+            const list = document.getElementById('captionList');
+            
+            if (captions.length === 0) {
+                list.innerHTML = '<p style="color: #888;">No captions added yet</p>';
+                return;
+            }
+            
+            list.innerHTML = captions.map((cap, index) => `
+                <div class="caption-item">
+                    <span>${cap.text} (${cap.start.toFixed(1)}s - ${cap.end.toFixed(1)}s)</span>
+                    <button onclick="removeCaption(${index})" style="background: #dc3545;">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function removeCaption(index) {
+            captions.splice(index, 1);
+            updateCaptionList();
+        }
+
+        function updateCaption() {
+            const currentTime = videoPlayer.currentTime;
+            const captionOverlay = document.getElementById('captionOverlay');
+            
+            const activeCaption = captions.find(cap => 
+                currentTime >= cap.start && currentTime <= cap.end
+            );
+            
+            if (activeCaption) {
+                captionOverlay.textContent = activeCaption.text;
+                captionOverlay.style.display = 'block';
+            } else {
+                captionOverlay.style.display = 'none';
+            }
+        }
+
+        function startExport() {
+            if (captions.length === 0) {
+                showError('Please add at least one caption before exporting');
+                return;
+            }
+            
+            alert('Exporting video with captions...\n\nNote: Due to browser limitations, the video will be exported in WebM format. You can convert it to MP4 using any online converter for TikTok compatibility.');
+            
+            exportWithCaptions();
+        }
+
+        function exportWithCaptions() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = videoPlayer.videoWidth;
+            canvas.height = videoPlayer.videoHeight;
+            
+            const stream = canvas.captureStream(30);
+            const recorder = new MediaRecorder(stream, {
+                mimeType: 'video/webm',
+                videoBitsPerSecond: 5000000
+            });
+            
+            const chunks = [];
+            
+            recorder.ondataavailable = (e) => chunks.push(e.data);
+            
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'tiktok-video-with-captions.webm';
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+            
+            recorder.start();
+            
+            videoPlayer.currentTime = 0;
+            videoPlayer.play();
+            
+            function drawFrame() {
+                if (videoPlayer.paused || videoPlayer.ended) {
+                    recorder.stop();
+                    return;
+                }
+                
+                // Draw video frame
+                ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+                
+                // Check for active caption
+                const currentTime = videoPlayer.currentTime;
+                const activeCaption = captions.find(cap => 
+                    currentTime >= cap.start && currentTime <= cap.end
+                );
+                
+                if (activeCaption) {
+                    // Set up text style
+                    ctx.font = 'bold 32px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    // Measure text
+                    const text = activeCaption.text;
+                    const metrics = ctx.measureText(text);
+                    const padding = 20;
+                    const boxWidth = metrics.width + padding * 2;
+                    const boxHeight = 60;
+                    
+                    // Position at center
+                    const x = canvas.width / 2;
+                    const y = canvas.height / 2;
+                    
+                    // Draw white rounded rectangle background
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    const radius = 10;
+                    ctx.roundRect(
+                        x - boxWidth / 2,
+                        y - boxHeight / 2,
+                        boxWidth,
+                        boxHeight,
+                        radius
+                    );
+                    ctx.fill();
+                    
+                    // Draw black text
+                    ctx.fillStyle = 'black';
+                    ctx.fillText(text, x, y);
+                }
+                
+                requestAnimationFrame(drawFrame);
+            }
+            
+            drawFrame();
+        }
+    </script>
+</body>
+</html>
