@@ -972,7 +972,37 @@
                 topVideo.src = videoPlayer.src;
                 topVideo.currentTime = videoPlayer.currentTime;
                 
-                // If no bottom media selected, prompt user
+                // Set up event listeners for top video
+                topVideo.addEventListener('play', () => {
+                    videoPlayer.play();
+                    if (bottomMediaType === 'video') {
+                        document.getElementById('bottomVideo')?.play();
+                    }
+                });
+                
+                topVideo.addEventListener('pause', () => {
+                    videoPlayer.pause();
+                    if (bottomMediaType === 'video') {
+                        document.getElementById('bottomVideo')?.pause();
+                    }
+                });
+                
+                topVideo.addEventListener('seeked', () => {
+                    videoPlayer.currentTime = topVideo.currentTime;
+                    if (bottomMediaType === 'video') {
+                        const bottomVideo = document.getElementById('bottomVideo');
+                        if (bottomVideo) bottomVideo.currentTime = topVideo.currentTime;
+                    }
+                });
+                
+                topVideo.addEventListener('timeupdate', () => {
+                    // Update the hidden main video player to keep captions in sync
+                    if (Math.abs(videoPlayer.currentTime - topVideo.currentTime) > 0.1) {
+                        videoPlayer.currentTime = topVideo.currentTime;
+                    }
+                });
+                
+                // If no bottom media selected, show placeholder
                 if (!bottomMedia) {
                     document.getElementById('bottomHalf').innerHTML = `
                         <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #1a1a1a;">
@@ -1026,13 +1056,28 @@
                     </div>
                 `;
                 
-                // Sync bottom video with top video
+                // Set up event listeners for bottom video
                 const bottomVideo = document.getElementById('bottomVideo');
                 const topVideo = document.getElementById('topVideo');
+                
+                // Sync with top video
                 bottomVideo.currentTime = topVideo.currentTime;
-                if (!topVideo.paused) {
-                    bottomVideo.play();
-                }
+                
+                // Set up sync listeners
+                bottomVideo.addEventListener('play', () => {
+                    topVideo.play();
+                    videoPlayer.play();
+                });
+                
+                bottomVideo.addEventListener('pause', () => {
+                    topVideo.pause();
+                    videoPlayer.pause();
+                });
+                
+                bottomVideo.addEventListener('seeked', () => {
+                    topVideo.currentTime = bottomVideo.currentTime;
+                    videoPlayer.currentTime = bottomVideo.currentTime;
+                });
             }
             
             // Reattach zoom event listener
@@ -1245,12 +1290,24 @@
             } else if (!previewMode) {
                 captionOverlay.classList.remove('active');
             }
-            
-            // Sync split screen videos
+        }
+
+        // Sync videos in split screen mode
+        function syncSplitScreenVideos() {
             if (currentTemplate === 'split') {
                 const topVideo = document.getElementById('topVideo');
-                if (Math.abs(topVideo.currentTime - currentTime) > 0.5) {
-                    topVideo.currentTime = currentTime;
+                const bottomVideo = document.getElementById('bottomVideo');
+                
+                // Sync top video with main player
+                if (topVideo && Math.abs(topVideo.currentTime - videoPlayer.currentTime) > 0.1) {
+                    topVideo.currentTime = videoPlayer.currentTime;
+                }
+                
+                // Sync bottom video if it exists
+                if (bottomVideo && bottomMediaType === 'video') {
+                    if (Math.abs(bottomVideo.currentTime - videoPlayer.currentTime) > 0.1) {
+                        bottomVideo.currentTime = videoPlayer.currentTime;
+                    }
                 }
             }
         }
