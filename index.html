@@ -12,6 +12,13 @@
             font-style: normal;
         }
 
+        @font-face {
+            font-family: 'Helvetica Neue';
+            src: url('https://fonts.cdnfonts.com/s/7377/HelveticaNeueBold.woff') format('woff');
+            font-weight: 700;
+            font-style: normal;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -474,6 +481,7 @@
                 <select id="fontFamily">
                     <option value="Montserrat">Montserrat</option>
                     <option value="Proxima Nova">Proxima Nova (Semi Bold)</option>
+                    <option value="Helvetica Neue">Helvetica Neue Bold</option>
                 </select>
             </div>
 
@@ -874,90 +882,79 @@
                 return;
             }
             
+            // Ask user which format they prefer
+            const useFFmpeg = confirm('Click OK to export as MP4 (may take longer)\nClick Cancel to export as WebM (faster but needs conversion)');
+            
             processing.classList.remove('hidden');
             
-            // Try FFmpeg first, fallback to WebM if it fails
-            try {
-                if (ffmpeg && ffmpeg.isLoaded()) {
-                    await exportWithFFmpeg();
-                } else {
-                    // Load FFmpeg if not loaded
-                    processingText.textContent = 'Loading video processor...';
-                    processingSubtext.textContent = 'First time setup (~30MB)';
-                    
-                    if (!ffmpeg) {
-                        const { createFFmpeg } = FFmpeg;
-                        ffmpeg = createFFmpeg({ log: true });
-                    }
-                    
-                    await ffmpeg.load();
-                    await exportWithFFmpeg();
+            if (useFFmpeg) {
+                try {
+                    await loadAndExportFFmpeg();
+                } catch (error) {
+                    console.error('FFmpeg export failed:', error);
+                    alert('MP4 export failed. Falling back to WebM format.');
+                    exportWithWebM();
                 }
-            } catch (error) {
-                console.error('FFmpeg export failed:', error);
-                processingText.textContent = 'Falling back to WebM export...';
-                setTimeout(() => exportWithWebM(), 1000);
+            } else {
+                exportWithWebM();
             }
         }
 
-        // Export with FFmpeg (MP4)
-        async function exportWithFFmpeg() {
-            processingText.textContent = 'Processing video with FFmpeg...';
-            processingSubtext.textContent = 'Creating MP4 with captions';
-            
+        // Load FFmpeg and export
+        async function loadAndExportFFmpeg() {
             try {
-                const { fetchFile } = FFmpeg;
+                processingText.textContent = 'Loading video processor...';
+                processingSubtext.textContent = 'This may take a moment...';
+                
+                // Create new FFmpeg instance for this export
+                const { createFFmpeg, fetchFile } = FFmpeg;
+                const ffmpegInstance = createFFmpeg({ 
+                    log: false,
+                    progress: ({ ratio }) => {
+                        if (ratio > 0) {
+                            processingText.textContent = 'Processing video...';
+                            processingSubtext.textContent = `${Math.round(ratio * 100)}% complete`;
+                        }
+                    }
+                });
+                
+                await ffmpegInstance.load();
+                
+                processingText.textContent = 'Processing video with captions...';
+                processingSubtext.textContent = 'Please wait...';
                 
                 // Write input video
-                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(currentVideo));
+                ffmpegInstance.FS('writeFile', 'input.mp4', await fetchFile(currentVideo));
                 
-                // Create filter for captions
-                let filterComplex = '';
+                // Build filter string for captions
+                const filters = [];
                 
-                captions.forEach((caption, index) => {
-                    const fontFamily = caption.fontFamily === 'Proxima Nova' ? 'Arial' : 'Arial';
+                captions.forEach((caption) => {
                     const textColor = caption.textColor.replace('#', '');
                     const bgColor = caption.bgColor.replace('#', '');
                     
-                    if (index > 0) filterComplex += ',';
+                    let filter = `drawtext=text='${caption.text.replace(/'/g, "\\\\'")}':`;
+                    filter += `x=(w-text_w)*${caption.x/100}:y=(h-text_h)*${caption.y/100}:`;
+                    filter += `fontsize=${caption.fontSize}:fontcolor=#${textColor}:`;
+                    filter += `box=1:boxcolor=#${bgColor}@1:boxborderw=10:`;
+                    filter += `enable='between(t,${caption.start},${caption.end})'`;
                     
-                    filterComplex += `drawtext=text='${caption.text.replace(/'/g, "\\\\'")}':`;
-                    filterComplex += `x=(w-text_w)*${caption.x/100}:y=(h-text_h)*${caption.y/100}:`;
-                    filterComplex += `fontsize=${caption.fontSize}:fontcolor=#${textColor}:`;
-                    filterComplex += `box=1:boxcolor=#${bgColor}@1:boxborderw=10:`;
-                    filterComplex += `enable='between(t,${caption.start},${caption.end})'`;
+                    filters.push(filter);
                 });
                 
-                // Add logo if present
-                const args = ['-i', 'input.mp4'];
+                const filterComplex = filters.join(',');
                 
-                if (logoDataUrl) {
-                    const logoBlob = await fetch(logoDataUrl).then(r => r.blob());
-                    ffmpeg.FS('writeFile', 'logo.png', await fetchFile(logoBlob));
-                    args.push('-i', 'logo.png');
-                    
-                    const pos = document.getElementById('logoPosition').value;
-                    const size = document.getElementById('logoSize').value;
-                    let x = pos.includes('left') ? '20' : `W-${size}-20`;
-                    let y = pos.includes('top') ? '20' : `H-${size}-20`;
-                    
-                    if (filterComplex) filterComplex = `[0:v]${filterComplex}[text];[text][1:v]overlay=${x}:${y}`;
-                    else filterComplex = `[0:v][1:v]overlay=${x}:${y}`;
-                } else if (filterComplex) {
-                    filterComplex = `[0:v]${filterComplex}`;
-                }
-                
-                // Add filter and output settings
-                if (filterComplex) {
-                    args.push('-filter_complex', filterComplex);
-                }
-                args.push('-c:a', 'copy', '-preset', 'fast', 'output.mp4');
-                
-                // Run FFmpeg
-                await ffmpeg.run(...args);
+                // Run FFmpeg with simple command
+                await ffmpegInstance.run(
+                    '-i', 'input.mp4',
+                    '-vf', filterComplex,
+                    '-c:a', 'copy',
+                    '-y',
+                    'output.mp4'
+                );
                 
                 // Get output
-                const data = ffmpeg.FS('readFile', 'output.mp4');
+                const data = ffmpegInstance.FS('readFile', 'output.mp4');
                 const blob = new Blob([data.buffer], { type: 'video/mp4' });
                 const url = URL.createObjectURL(blob);
                 
@@ -968,14 +965,14 @@
                 a.click();
                 
                 // Cleanup
-                ffmpeg.FS('unlink', 'input.mp4');
-                ffmpeg.FS('unlink', 'output.mp4');
-                if (logoDataUrl) ffmpeg.FS('unlink', 'logo.png');
+                ffmpegInstance.FS('unlink', 'input.mp4');
+                ffmpegInstance.FS('unlink', 'output.mp4');
                 
                 processing.classList.add('hidden');
                 
             } catch (error) {
-                console.error('FFmpeg processing error:', error);
+                console.error('FFmpeg error:', error);
+                processing.classList.add('hidden');
                 throw error;
             }
         }
