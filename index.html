@@ -260,6 +260,83 @@
             max-width: 90%;
             word-wrap: break-word;
             white-space: normal;
+            min-width: 100px;
+            resize: horizontal;
+            overflow: auto;
+        }
+
+        .caption-overlay {
+            position: absolute;
+            cursor: move;
+            user-select: none;
+            z-index: 10;
+            display: none;
+            padding: 10px;
+        }
+
+        .caption-overlay.active {
+            display: block;
+        }
+
+        .caption-overlay.dragging {
+            cursor: grabbing;
+        }
+
+        .caption-overlay:hover .caption-resize-handle {
+            opacity: 1;
+        }
+
+        .caption-resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #0095f6;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            cursor: ew-resize;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .caption-resize-handle.left {
+            left: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .caption-resize-handle.right {
+            right: -5px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .position-presets {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .preset-btn {
+            padding: 8px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-btn:hover {
+            background: #333;
+            border-color: #0095f6;
+        }
+
+        .preset-btn.split-center {
+            grid-column: 1 / -1;
+            background: #0095f6;
+            border-color: #0095f6;
         }
 
         .logo-overlay {
@@ -766,9 +843,29 @@
                     <input type="number" id="captionX" min="0" max="100" value="50" step="1" placeholder="X (%)">
                     <input type="number" id="captionY" min="0" max="100" value="50" step="1" placeholder="Y (%)">
                 </div>
+                
+                <div class="position-presets">
+                    <button class="preset-btn" onclick="setPosition(10, 20)">Top Left</button>
+                    <button class="preset-btn" onclick="setPosition(50, 20)">Top Center</button>
+                    <button class="preset-btn" onclick="setPosition(90, 20)">Top Right</button>
+                    <button class="preset-btn" onclick="setPosition(10, 50)">Mid Left</button>
+                    <button class="preset-btn" onclick="setPosition(50, 50)">Center</button>
+                    <button class="preset-btn" onclick="setPosition(90, 50)">Mid Right</button>
+                    <button class="preset-btn" onclick="setPosition(10, 80)">Bot Left</button>
+                    <button class="preset-btn" onclick="setPosition(50, 80)">Bot Center</button>
+                    <button class="preset-btn" onclick="setPosition(90, 80)">Bot Right</button>
+                    <button class="preset-btn split-center" id="splitCenterBtn" style="display: none;" onclick="setSplitCenter()">Split Screen Center (Between Videos)</button>
+                </div>
+                
                 <div class="info-box">
                     💡 Tip: Enable preview mode and drag the caption to position it!
                 </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Caption Width</h3>
+                <input type="range" id="captionWidth" min="20" max="100" value="60" step="5">
+                <div class="range-value">Width: <span id="captionWidthValue">60</span>%</div>
             </div>
 
             <div class="control-group">
@@ -832,6 +929,20 @@
         let currentTemplate = 'standard';
         let bottomZoom = 100;
         let muteBottomAudio = true;
+        let captionWidth = 60;
+
+        // Position preset functions
+        window.setPosition = function(x, y) {
+            document.getElementById('captionX').value = x;
+            document.getElementById('captionY').value = y;
+            updateCaptionPosition();
+        };
+
+        window.setSplitCenter = function() {
+            document.getElementById('captionX').value = 50;
+            document.getElementById('captionY').value = 50;
+            updateCaptionPosition();
+        };
 
         // DOM elements
         let videoPlayer, captionOverlay, captionText, logoOverlay, logoImage;
@@ -977,6 +1088,7 @@
             document.getElementById('bgColor').addEventListener('input', updateColors);
             document.getElementById('textColor').addEventListener('input', updateColors);
             document.getElementById('captionInput').addEventListener('input', updatePreviewText);
+            document.getElementById('captionWidth').addEventListener('input', updateCaptionWidth);
             
             // Logo controls
             document.getElementById('logoInput').addEventListener('change', handleLogoSelect);
@@ -1003,12 +1115,14 @@
             const standardView = document.getElementById('standardView');
             const splitScreenView = document.getElementById('splitScreenView');
             const splitControls = document.getElementById('splitScreenControls');
+            const splitCenterBtn = document.getElementById('splitCenterBtn');
             
             if (template === 'split') {
                 // Switch to split screen
                 standardView.classList.add('hidden');
                 splitScreenView.classList.remove('hidden');
                 splitControls.classList.remove('hidden');
+                splitCenterBtn.style.display = 'block';
                 videoWrapper.classList.add('split-screen');
                 videoWrapper.classList.remove('standard-mode');
                 
@@ -1042,6 +1156,7 @@
                 standardView.classList.remove('hidden');
                 splitScreenView.classList.add('hidden');
                 splitControls.classList.add('hidden');
+                splitCenterBtn.style.display = 'none';
                 videoWrapper.classList.remove('split-screen');
                 videoWrapper.classList.add('standard-mode');
                 
@@ -1158,12 +1273,20 @@
             }
         }
 
+        // Update caption width
+        function updateCaptionWidth(e) {
+            captionWidth = e ? e.target.value : document.getElementById('captionWidth').value;
+            document.getElementById('captionWidthValue').textContent = captionWidth;
+            captionText.style.maxWidth = captionWidth + '%';
+        }
+
         // Update all styles
         function updateAllStyles() {
             updateFontSize();
             updateFontFamily();
             updateCaptionPosition();
             updateColors();
+            updateCaptionWidth();
         }
 
         // Handle video file selection
@@ -1327,7 +1450,11 @@
                 return;
             }
             
-            if (end > videoPlayer.duration) {
+            const videoDuration = currentTemplate === 'split' ? 
+                document.getElementById('topVideo').duration : 
+                videoPlayer.duration;
+            
+            if (end > videoDuration) {
                 alert('End time exceeds video duration');
                 return;
             }
@@ -1341,7 +1468,8 @@
                 fontSize: parseInt(document.getElementById('fontSize').value),
                 fontFamily: document.getElementById('fontFamily').value,
                 bgColor: document.getElementById('bgColor').value,
-                textColor: document.getElementById('textColor').value
+                textColor: document.getElementById('textColor').value,
+                width: parseInt(document.getElementById('captionWidth').value)
             });
             
             updateCaptionList();
@@ -1349,7 +1477,7 @@
             // Reset inputs
             document.getElementById('captionInput').value = '';
             document.getElementById('startTime').value = secondsToTime(end);
-            document.getElementById('endTime').value = secondsToTime(Math.min(end + 3, videoPlayer.duration));
+            document.getElementById('endTime').value = secondsToTime(Math.min(end + 3, videoDuration));
             
             // Reset position to center for next caption
             document.getElementById('captionX').value = 50;
@@ -1389,6 +1517,7 @@
                 captionText.style.fontFamily = `'${activeCaption.fontFamily}', sans-serif`;
                 captionText.style.backgroundColor = activeCaption.bgColor;
                 captionText.style.color = activeCaption.textColor;
+                captionText.style.maxWidth = (activeCaption.width || 60) + '%';
                 
                 // Update position
                 captionOverlay.style.left = activeCaption.x + '%';
@@ -1661,8 +1790,70 @@
                 canvas.height = videoPlayer.videoHeight;
             }
             
-            const stream = canvas.captureStream(30);
-            const mediaRecorder = new MediaRecorder(stream, {
+            // Create offline video elements for smoother export
+            const exportVideo = document.createElement('video');
+            exportVideo.src = videoPlayer.src;
+            exportVideo.muted = true; // Mute for export process
+            
+            let exportTopVideo, exportBottomVideo;
+            if (currentTemplate === 'split') {
+                exportTopVideo = document.createElement('video');
+                exportTopVideo.src = document.getElementById('topVideo').src;
+                exportTopVideo.muted = true;
+                
+                if (bottomMediaType === 'video') {
+                    exportBottomVideo = document.createElement('video');
+                    exportBottomVideo.src = document.getElementById('bottomVideo').src;
+                    exportBottomVideo.muted = true;
+                }
+            }
+            
+            // Wait for videos to be ready
+            await new Promise(resolve => {
+                exportVideo.onloadedmetadata = resolve;
+            });
+            
+            if (exportTopVideo) {
+                await new Promise(resolve => {
+                    exportTopVideo.onloadedmetadata = resolve;
+                });
+            }
+            
+            if (exportBottomVideo) {
+                await new Promise(resolve => {
+                    exportBottomVideo.onloadedmetadata = resolve;
+                });
+            }
+            
+            // Get audio from the main video
+            const audioStream = new MediaStream();
+            if (currentTemplate === 'split') {
+                // Get audio from top video element
+                const topVideoElement = document.getElementById('topVideo');
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioCtx.createMediaStreamSource(topVideoElement.captureStream());
+                const destination = audioCtx.createMediaStreamDestination();
+                source.connect(destination);
+                audioStream.addTrack(destination.stream.getAudioTracks()[0]);
+            } else {
+                // Get audio from standard video
+                const videoStream = videoPlayer.captureStream();
+                if (videoStream.getAudioTracks().length > 0) {
+                    audioStream.addTrack(videoStream.getAudioTracks()[0]);
+                }
+            }
+            
+            // Combine video canvas stream with audio
+            const canvasStream = canvas.captureStream(30);
+            const videoTrack = canvasStream.getVideoTracks()[0];
+            
+            const combinedStream = new MediaStream();
+            combinedStream.addTrack(videoTrack);
+            if (audioStream.getAudioTracks().length > 0) {
+                combinedStream.addTrack(audioStream.getAudioTracks()[0]);
+            }
+            
+            const mediaRecorder = new MediaRecorder(combinedStream, {
                 mimeType: 'video/webm',
                 videoBitsPerSecond: 8000000
             });
@@ -1690,34 +1881,35 @@
             processingText.textContent = 'Recording video with captions...';
             processingSubtext.textContent = 'Please wait, do not close this tab';
             
+            // Start recording
             mediaRecorder.start();
-            videoPlayer.currentTime = 0;
-            videoPlayer.play();
             
-            if (currentTemplate === 'split') {
-                document.getElementById('topVideo').currentTime = 0;
-                document.getElementById('topVideo').play();
-                if (bottomMediaType === 'video') {
-                    const bottomVideo = document.getElementById('bottomVideo');
-                    bottomVideo.currentTime = 0;
-                    bottomVideo.muted = true; // Always mute bottom video in export
-                    bottomVideo.play();
-                }
+            // Start playback
+            exportVideo.currentTime = 0;
+            await exportVideo.play();
+            
+            if (exportTopVideo) {
+                exportTopVideo.currentTime = 0;
+                await exportTopVideo.play();
+            }
+            
+            if (exportBottomVideo) {
+                exportBottomVideo.currentTime = 0;
+                await exportBottomVideo.play();
             }
             
             function renderFrame() {
-                if (videoPlayer.paused || videoPlayer.ended) {
+                if (exportVideo.ended) {
                     mediaRecorder.stop();
                     return;
                 }
                 
-                const progress = (videoPlayer.currentTime / videoPlayer.duration * 100).toFixed(1);
+                const progress = (exportVideo.currentTime / exportVideo.duration * 100).toFixed(1);
                 processingSubtext.textContent = `Processing: ${progress}%`;
                 
                 if (currentTemplate === 'split') {
                     // Draw top video
-                    const topVideo = document.getElementById('topVideo');
-                    ctx.drawImage(topVideo, 0, 0, canvas.width, canvas.height / 2);
+                    ctx.drawImage(exportTopVideo, 0, 0, canvas.width, canvas.height / 2);
                     
                     // Draw bottom media
                     if (bottomMediaType === 'image') {
@@ -1728,22 +1920,21 @@
                         const x = (canvas.width - w) / 2;
                         const y = canvas.height / 2 + ((canvas.height / 2) - h) / 2;
                         ctx.drawImage(img, x, y, w, h);
-                    } else if (bottomMediaType === 'video') {
-                        const vid = document.getElementById('bottomVideo');
+                    } else if (bottomMediaType === 'video' && exportBottomVideo) {
                         const scale = bottomZoom / 100;
                         const w = canvas.width * scale;
                         const h = (canvas.height / 2) * scale;
                         const x = (canvas.width - w) / 2;
                         const y = canvas.height / 2 + ((canvas.height / 2) - h) / 2;
-                        ctx.drawImage(vid, x, y, w, h);
+                        ctx.drawImage(exportBottomVideo, x, y, w, h);
                     }
                 } else {
                     // Standard template
-                    ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(exportVideo, 0, 0, canvas.width, canvas.height);
                 }
                 
                 // Draw active caption
-                const currentTime = videoPlayer.currentTime;
+                const currentTime = exportVideo.currentTime;
                 const activeCaption = captions.find(c => currentTime >= c.start && currentTime <= c.end);
                 
                 if (activeCaption) {
