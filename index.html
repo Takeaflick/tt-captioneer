@@ -148,6 +148,11 @@
             cursor: move;
             user-select: none;
             z-index: 10;
+            display: none;
+        }
+
+        .caption-overlay.active {
+            display: block;
         }
 
         .caption-overlay.dragging {
@@ -216,6 +221,12 @@
             outline: none;
             border-color: #0095f6;
             background: #333;
+        }
+
+        .time-input {
+            font-family: monospace;
+            font-size: 16px;
+            text-align: center;
         }
 
         input[type="file"] {
@@ -407,6 +418,13 @@
             display: none !important;
         }
 
+        .preview-mode-toggle {
+            margin-top: 10px;
+            background: #444;
+            font-size: 13px;
+            padding: 8px;
+        }
+
         /* Scrollbar styling */
         ::-webkit-scrollbar {
             width: 8px;
@@ -445,7 +463,7 @@
             
             <div id="videoWrapper" class="video-container hidden">
                 <video id="videoPlayer" controls></video>
-                <div id="captionOverlay" class="caption-overlay hidden">
+                <div id="captionOverlay" class="caption-overlay">
                     <div id="captionText" class="caption"></div>
                 </div>
                 <div id="logoOverlay" class="logo-overlay hidden">
@@ -465,13 +483,14 @@
             <div class="control-group">
                 <h3>Caption Text</h3>
                 <input type="text" id="captionInput" placeholder="Enter your caption text">
+                <button class="preview-mode-toggle" id="previewToggle">Show Caption Preview</button>
             </div>
 
             <div class="control-group">
-                <h3>Timing</h3>
+                <h3>Timing (HH:MM:SS)</h3>
                 <div class="time-inputs">
-                    <input type="number" id="startTime" min="0" step="0.1" value="0" placeholder="Start (s)">
-                    <input type="number" id="endTime" min="0" step="0.1" value="3" placeholder="End (s)">
+                    <input type="text" id="startTime" class="time-input" value="00:00:00" placeholder="00:00:00" maxlength="8">
+                    <input type="text" id="endTime" class="time-input" value="00:00:03" placeholder="00:00:00" maxlength="8">
                 </div>
                 <button id="addCaption">Add Caption to Timeline</button>
             </div>
@@ -487,8 +506,8 @@
 
             <div class="control-group">
                 <h3>Font Size</h3>
-                <input type="range" id="fontSize" min="16" max="48" value="24">
-                <div class="range-value"><span id="fontSizeValue">24</span>px</div>
+                <input type="range" id="fontSize" min="16" max="72" value="32">
+                <div class="range-value"><span id="fontSizeValue">32</span>px</div>
             </div>
 
             <div class="control-group">
@@ -498,7 +517,7 @@
                     <input type="number" id="captionY" min="0" max="100" value="50" step="1" placeholder="Y (%)">
                 </div>
                 <div class="info-box">
-                    💡 Tip: Drag the caption directly on the video!
+                    💡 Tip: Enable preview mode and drag the caption to position it!
                 </div>
             </div>
 
@@ -537,7 +556,7 @@
                 <div class="range-value"><span id="logoSizeValue">100</span>px</div>
             </div>
 
-            <button id="exportVideo" class="export-button" disabled>🎬 Export Video with Captions</button>
+            <button id="exportVideo" class="export-button" disabled>🎬 Export Video (MP4)</button>
         </div>
     </div>
 
@@ -549,7 +568,6 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.11.6/ffmpeg.min.js"></script>
     <script>
         // Global variables
         let captions = [];
@@ -557,8 +575,9 @@
         let logoDataUrl = null;
         let isDragging = false;
         let dragOffset = { x: 0, y: 0 };
-        let ffmpeg = null;
         let objectURL = null;
+        let previewMode = false;
+        let videoScaleFactor = 1;
 
         // DOM elements
         let videoPlayer, captionOverlay, captionText, logoOverlay, logoImage;
@@ -585,30 +604,46 @@
 
             // Set up event listeners
             setupEventListeners();
-            
-            // Initialize FFmpeg
-            initFFmpeg();
         });
 
-        // Initialize FFmpeg
-        async function initFFmpeg() {
-            if (ffmpeg) return;
+        // Time format functions
+        function timeToSeconds(timeStr) {
+            const parts = timeStr.split(':');
+            if (parts.length !== 3) return 0;
             
-            try {
-                const { createFFmpeg } = FFmpeg;
-                ffmpeg = createFFmpeg({ 
-                    log: false,
-                    corePath: 'https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.11.6/ffmpeg-core.js'
-                });
-                
-                // Pre-load FFmpeg in the background
-                ffmpeg.load().then(() => {
-                    console.log('FFmpeg loaded successfully');
-                }).catch(err => {
-                    console.error('FFmpeg loading error:', err);
-                });
-            } catch (error) {
-                console.error('FFmpeg initialization error:', error);
+            const hours = parseInt(parts[0]) || 0;
+            const minutes = parseInt(parts[1]) || 0;
+            const seconds = parseFloat(parts[2]) || 0;
+            
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+
+        function secondsToTime(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function formatTimeInput(input) {
+            let value = input.value.replace(/[^\d:]/g, '');
+            let parts = value.split(':');
+            
+            // Auto-format as user types
+            if (value.length === 2 && !value.includes(':')) {
+                value = value + ':';
+            } else if (value.length === 5 && parts.length === 2) {
+                value = value + ':';
+            }
+            
+            input.value = value;
+        }
+
+        // Calculate scale factor for accurate caption sizing
+        function updateVideoScaleFactor() {
+            if (videoPlayer.videoWidth && videoPlayer.clientWidth) {
+                videoScaleFactor = videoPlayer.videoWidth / videoPlayer.clientWidth;
             }
         }
 
@@ -628,6 +663,17 @@
             videoPlayer.addEventListener('error', videoError);
             videoPlayer.addEventListener('timeupdate', updateCaption);
             
+            // Time input formatting
+            document.getElementById('startTime').addEventListener('input', function(e) {
+                formatTimeInput(e.target);
+            });
+            document.getElementById('endTime').addEventListener('input', function(e) {
+                formatTimeInput(e.target);
+            });
+            
+            // Preview toggle
+            document.getElementById('previewToggle').addEventListener('click', togglePreviewMode);
+            
             // Caption controls
             document.getElementById('addCaption').addEventListener('click', addCaption);
             document.getElementById('fontSize').addEventListener('input', updateFontSize);
@@ -636,6 +682,7 @@
             document.getElementById('captionY').addEventListener('input', updateCaptionPosition);
             document.getElementById('bgColor').addEventListener('input', updateColors);
             document.getElementById('textColor').addEventListener('input', updateColors);
+            document.getElementById('captionInput').addEventListener('input', updatePreviewText);
             
             // Logo controls
             document.getElementById('logoInput').addEventListener('change', handleLogoSelect);
@@ -649,6 +696,48 @@
             captionOverlay.addEventListener('mousedown', startDragging);
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', stopDragging);
+            
+            // Window resize
+            window.addEventListener('resize', updateVideoScaleFactor);
+        }
+
+        // Toggle preview mode
+        function togglePreviewMode() {
+            previewMode = !previewMode;
+            const btn = document.getElementById('previewToggle');
+            
+            if (previewMode) {
+                btn.textContent = 'Hide Caption Preview';
+                captionOverlay.classList.add('active');
+                updatePreviewText();
+                updateAllStyles();
+            } else {
+                btn.textContent = 'Show Caption Preview';
+                if (!videoPlayer.paused) {
+                    // Only hide if video is not playing
+                    const currentTime = videoPlayer.currentTime;
+                    const hasActiveCaption = captions.some(c => currentTime >= c.start && currentTime <= c.end);
+                    if (!hasActiveCaption) {
+                        captionOverlay.classList.remove('active');
+                    }
+                }
+            }
+        }
+
+        // Update preview text
+        function updatePreviewText() {
+            if (previewMode) {
+                const text = document.getElementById('captionInput').value || 'Preview text';
+                captionText.textContent = text;
+            }
+        }
+
+        // Update all styles
+        function updateAllStyles() {
+            updateFontSize();
+            updateFontFamily();
+            updateCaptionPosition();
+            updateColors();
         }
 
         // Handle video file selection
@@ -706,9 +795,9 @@
         // Video loaded successfully
         function videoLoaded() {
             console.log('Video loaded successfully');
-            document.getElementById('endTime').value = Math.min(3, videoPlayer.duration);
-            document.getElementById('endTime').max = videoPlayer.duration;
-            document.getElementById('startTime').max = videoPlayer.duration;
+            const duration = videoPlayer.duration;
+            document.getElementById('endTime').value = secondsToTime(Math.min(3, duration));
+            updateVideoScaleFactor();
         }
 
         // Video error handler
@@ -720,29 +809,50 @@
         // Add caption to timeline
         function addCaption() {
             const text = document.getElementById('captionInput').value.trim();
-            const start = parseFloat(document.getElementById('startTime').value);
-            const end = parseFloat(document.getElementById('endTime').value);
+            const startTimeStr = document.getElementById('startTime').value;
+            const endTimeStr = document.getElementById('endTime').value;
             
-            if (text && start < end && end <= videoPlayer.duration) {
-                captions.push({
-                    text,
-                    start,
-                    end,
-                    x: parseFloat(document.getElementById('captionX').value),
-                    y: parseFloat(document.getElementById('captionY').value),
-                    fontSize: parseInt(document.getElementById('fontSize').value),
-                    fontFamily: document.getElementById('fontFamily').value,
-                    bgColor: document.getElementById('bgColor').value,
-                    textColor: document.getElementById('textColor').value
-                });
-                
-                updateCaptionList();
-                
-                // Reset inputs
-                document.getElementById('captionInput').value = '';
-                document.getElementById('startTime').value = end;
-                document.getElementById('endTime').value = Math.min(end + 3, videoPlayer.duration);
+            if (!text) {
+                alert('Please enter caption text');
+                return;
             }
+            
+            const start = timeToSeconds(startTimeStr);
+            const end = timeToSeconds(endTimeStr);
+            
+            if (start >= end) {
+                alert('End time must be after start time');
+                return;
+            }
+            
+            if (end > videoPlayer.duration) {
+                alert('End time exceeds video duration');
+                return;
+            }
+            
+            captions.push({
+                text,
+                start,
+                end,
+                x: parseFloat(document.getElementById('captionX').value),
+                y: parseFloat(document.getElementById('captionY').value),
+                fontSize: parseInt(document.getElementById('fontSize').value),
+                fontFamily: document.getElementById('fontFamily').value,
+                bgColor: document.getElementById('bgColor').value,
+                textColor: document.getElementById('textColor').value
+            });
+            
+            updateCaptionList();
+            
+            // Reset inputs
+            document.getElementById('captionInput').value = '';
+            document.getElementById('startTime').value = secondsToTime(end);
+            document.getElementById('endTime').value = secondsToTime(Math.min(end + 3, videoPlayer.duration));
+            
+            // Reset position to center for next caption
+            document.getElementById('captionX').value = 50;
+            document.getElementById('captionY').value = 50;
+            updateCaptionPosition();
         }
 
         // Update caption list display
@@ -754,7 +864,7 @@
             
             captionList.innerHTML = captions.map((caption, index) => `
                 <div class="caption-item">
-                    <div class="caption-item-text">${caption.text} (${caption.start.toFixed(1)}s - ${caption.end.toFixed(1)}s)</div>
+                    <div class="caption-item-text">${caption.text} (${secondsToTime(caption.start)} - ${secondsToTime(caption.end)})</div>
                     <button onclick="removeCaption(${index})">Remove</button>
                 </div>
             `).join('');
@@ -783,9 +893,9 @@
                 captionOverlay.style.top = activeCaption.y + '%';
                 captionOverlay.style.transform = 'translate(-50%, -50%)';
                 
-                captionOverlay.classList.remove('hidden');
-            } else {
-                captionOverlay.classList.add('hidden');
+                captionOverlay.classList.add('active');
+            } else if (!previewMode) {
+                captionOverlay.classList.remove('active');
             }
         }
 
@@ -806,264 +916,4 @@
         function drag(e) {
             if (!isDragging) return;
             
-            const rect = videoWrapper.getBoundingClientRect();
-            const x = e.clientX - rect.left - dragOffset.x;
-            const y = e.clientY - rect.top - dragOffset.y;
-            
-            const xPercent = Math.max(0, Math.min(100, (x / rect.width) * 100));
-            const yPercent = Math.max(0, Math.min(100, (y / rect.height) * 100));
-            
-            document.getElementById('captionX').value = Math.round(xPercent);
-            document.getElementById('captionY').value = Math.round(yPercent);
-            
-            updateCaptionPosition();
-        }
-
-        function stopDragging() {
-            isDragging = false;
-            captionOverlay.classList.remove('dragging');
-        }
-
-        // Update functions
-        function updateFontSize(e) {
-            document.getElementById('fontSizeValue').textContent = e.target.value;
-            captionText.style.fontSize = e.target.value + 'px';
-        }
-
-        function updateFontFamily(e) {
-            captionText.style.fontFamily = `'${e.target.value}', sans-serif`;
-        }
-
-        function updateCaptionPosition() {
-            const x = document.getElementById('captionX').value;
-            const y = document.getElementById('captionY').value;
-            captionOverlay.style.left = x + '%';
-            captionOverlay.style.top = y + '%';
-        }
-
-        function updateColors() {
-            captionText.style.backgroundColor = document.getElementById('bgColor').value;
-            captionText.style.color = document.getElementById('textColor').value;
-        }
-
-        // Logo handling
-        function handleLogoSelect(e) {
-            const file = e.target.files[0];
-            if (file && file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    logoDataUrl = event.target.result;
-                    logoImage.src = logoDataUrl;
-                    logoOverlay.classList.remove('hidden');
-                    updateLogoPosition();
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        function updateLogoPosition() {
-            const position = document.getElementById('logoPosition').value;
-            logoOverlay.style.top = position.includes('top') ? '20px' : 'auto';
-            logoOverlay.style.bottom = position.includes('bottom') ? '20px' : 'auto';
-            logoOverlay.style.left = position.includes('left') ? '20px' : 'auto';
-            logoOverlay.style.right = position.includes('right') ? '20px' : 'auto';
-        }
-
-        function updateLogoSize(e) {
-            document.getElementById('logoSizeValue').textContent = e.target.value;
-            logoOverlay.style.width = e.target.value + 'px';
-            logoOverlay.style.height = e.target.value + 'px';
-        }
-
-        // Export video
-        async function exportVideo() {
-            if (captions.length === 0) {
-                alert('Please add at least one caption before exporting.');
-                return;
-            }
-            
-            // Ask user which format they prefer
-            const useFFmpeg = confirm('Click OK to export as MP4 (may take longer)\nClick Cancel to export as WebM (faster but needs conversion)');
-            
-            processing.classList.remove('hidden');
-            
-            if (useFFmpeg) {
-                try {
-                    await loadAndExportFFmpeg();
-                } catch (error) {
-                    console.error('FFmpeg export failed:', error);
-                    alert('MP4 export failed. Falling back to WebM format.');
-                    exportWithWebM();
-                }
-            } else {
-                exportWithWebM();
-            }
-        }
-
-        // Load FFmpeg and export
-        async function loadAndExportFFmpeg() {
-            try {
-                processingText.textContent = 'Loading video processor...';
-                processingSubtext.textContent = 'This may take a moment...';
-                
-                // Create new FFmpeg instance for this export
-                const { createFFmpeg, fetchFile } = FFmpeg;
-                const ffmpegInstance = createFFmpeg({ 
-                    log: false,
-                    progress: ({ ratio }) => {
-                        if (ratio > 0) {
-                            processingText.textContent = 'Processing video...';
-                            processingSubtext.textContent = `${Math.round(ratio * 100)}% complete`;
-                        }
-                    }
-                });
-                
-                await ffmpegInstance.load();
-                
-                processingText.textContent = 'Processing video with captions...';
-                processingSubtext.textContent = 'Please wait...';
-                
-                // Write input video
-                ffmpegInstance.FS('writeFile', 'input.mp4', await fetchFile(currentVideo));
-                
-                // Build filter string for captions
-                const filters = [];
-                
-                captions.forEach((caption) => {
-                    const textColor = caption.textColor.replace('#', '');
-                    const bgColor = caption.bgColor.replace('#', '');
-                    
-                    let filter = `drawtext=text='${caption.text.replace(/'/g, "\\\\'")}':`;
-                    filter += `x=(w-text_w)*${caption.x/100}:y=(h-text_h)*${caption.y/100}:`;
-                    filter += `fontsize=${caption.fontSize}:fontcolor=#${textColor}:`;
-                    filter += `box=1:boxcolor=#${bgColor}@1:boxborderw=10:`;
-                    filter += `enable='between(t,${caption.start},${caption.end})'`;
-                    
-                    filters.push(filter);
-                });
-                
-                const filterComplex = filters.join(',');
-                
-                // Run FFmpeg with simple command
-                await ffmpegInstance.run(
-                    '-i', 'input.mp4',
-                    '-vf', filterComplex,
-                    '-c:a', 'copy',
-                    '-y',
-                    'output.mp4'
-                );
-                
-                // Get output
-                const data = ffmpegInstance.FS('readFile', 'output.mp4');
-                const blob = new Blob([data.buffer], { type: 'video/mp4' });
-                const url = URL.createObjectURL(blob);
-                
-                // Download
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'tiktok-video-with-captions.mp4';
-                a.click();
-                
-                // Cleanup
-                ffmpegInstance.FS('unlink', 'input.mp4');
-                ffmpegInstance.FS('unlink', 'output.mp4');
-                
-                processing.classList.add('hidden');
-                
-            } catch (error) {
-                console.error('FFmpeg error:', error);
-                processing.classList.add('hidden');
-                throw error;
-            }
-        }
-
-        // Export with WebM fallback
-        function exportWithWebM() {
-            processingText.textContent = 'Exporting as WebM...';
-            processingSubtext.textContent = 'You can convert to MP4 later';
-            
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            canvas.width = videoPlayer.videoWidth;
-            canvas.height = videoPlayer.videoHeight;
-            
-            const stream = canvas.captureStream(30);
-            const mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'video/webm',
-                videoBitsPerSecond: 5000000
-            });
-            
-            const chunks = [];
-            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-            
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(chunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'tiktok-video-with-captions.webm';
-                a.click();
-                processing.classList.add('hidden');
-            };
-            
-            mediaRecorder.start();
-            videoPlayer.currentTime = 0;
-            videoPlayer.play();
-            
-            function renderFrame() {
-                if (videoPlayer.paused || videoPlayer.ended) {
-                    mediaRecorder.stop();
-                    return;
-                }
-                
-                ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
-                
-                const currentTime = videoPlayer.currentTime;
-                const activeCaption = captions.find(c => currentTime >= c.start && currentTime <= c.end);
-                
-                if (activeCaption) {
-                    ctx.font = `bold ${activeCaption.fontSize}px '${activeCaption.fontFamily}', sans-serif`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    
-                    const text = activeCaption.text;
-                    const metrics = ctx.measureText(text);
-                    const padding = 16;
-                    const boxWidth = metrics.width + padding * 2;
-                    const boxHeight = activeCaption.fontSize + padding;
-                    
-                    const x = (canvas.width * activeCaption.x / 100);
-                    const y = (canvas.height * activeCaption.y / 100);
-                    
-                    const rectX = x - boxWidth / 2;
-                    const rectY = y - boxHeight / 2;
-                    
-                    // Draw rounded rectangle
-                    ctx.fillStyle = activeCaption.bgColor;
-                    ctx.beginPath();
-                    ctx.roundRect(rectX, rectY, boxWidth, boxHeight, 10);
-                    ctx.fill();
-                    
-                    // Draw text
-                    ctx.fillStyle = activeCaption.textColor;
-                    ctx.fillText(text, x, y);
-                }
-                
-                // Draw logo
-                if (logoDataUrl && logoImage.complete) {
-                    const size = parseInt(document.getElementById('logoSize').value);
-                    const pos = document.getElementById('logoPosition').value;
-                    
-                    let logoX = pos.includes('left') ? 20 : canvas.width - size - 20;
-                    let logoY = pos.includes('top') ? 20 : canvas.height - size - 20;
-                    
-                    ctx.drawImage(logoImage, logoX, logoY, size, size);
-                }
-                
-                requestAnimationFrame(renderFrame);
-            }
-            
-            renderFrame();
-        }
-    </script>
+            const rect = videoWrapper.getBoundingClientRect
