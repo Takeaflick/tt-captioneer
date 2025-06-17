@@ -142,20 +142,35 @@
             overflow: hidden;
             box-shadow: 0 8px 30px rgba(0,0,0,0.7);
             margin-bottom: 20px;
+            width: 100%;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .video-container.split-screen {
+            aspect-ratio: 9/16;
+            height: auto;
+            max-height: 80vh;
+        }
+
+        #splitScreenView {
+            width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
-            height: 600px;
-            max-width: 400px;
         }
 
         .video-half {
             position: relative;
-            height: 50%;
+            flex: 1;
             overflow: hidden;
             background: #000;
+            border: none;
+        }
+
+        .video-half:first-child {
+            border-bottom: 2px solid #333;
         }
 
         .video-half video,
@@ -163,20 +178,28 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
         }
 
         .bottom-media-controls {
             position: absolute;
             bottom: 10px;
             right: 10px;
-            background: rgba(0,0,0,0.7);
-            padding: 5px 10px;
-            border-radius: 5px;
+            background: rgba(0,0,0,0.8);
+            padding: 8px 12px;
+            border-radius: 6px;
             display: none;
+            backdrop-filter: blur(10px);
         }
 
         .video-half:hover .bottom-media-controls {
             display: block;
+        }
+
+        .zoom-label {
+            color: #fff;
+            font-size: 12px;
+            margin-right: 10px;
         }
 
         video {
@@ -584,14 +607,15 @@
                 <div id="standardView" style="width: 100%;">
                     <video id="videoPlayer" controls></video>
                 </div>
-                <div id="splitScreenView" class="hidden" style="width: 100%;">
+                <div id="splitScreenView" class="hidden" style="width: 100%; height: 100%;">
                     <div class="video-half">
-                        <video id="topVideo" controls></video>
+                        <video id="topVideo" controls style="width: 100%; height: 100%; object-fit: cover;"></video>
                     </div>
                     <div class="video-half" id="bottomHalf">
-                        <img id="bottomImage" style="display: none;" />
-                        <video id="bottomVideo" style="display: none;" controls></video>
+                        <img id="bottomImage" style="display: none; width: 100%; height: 100%; object-fit: cover;" />
+                        <video id="bottomVideo" style="display: none; width: 100%; height: 100%; object-fit: cover;" controls></video>
                         <div class="bottom-media-controls">
+                            <span class="zoom-label">Zoom:</span>
                             <input type="range" id="bottomZoom" min="100" max="200" value="100" style="width: 100px;">
                         </div>
                     </div>
@@ -633,7 +657,10 @@
                     Choose Image/Video for Bottom
                 </label>
                 <input type="file" id="bottomMediaInput" accept="image/*,video/*">
-                <p style="font-size: 12px; color: #888; margin-top: 5px;">Use slider on preview to zoom</p>
+                <p style="font-size: 12px; color: #888; margin-top: 5px;">
+                    • Videos will match the main video timing<br>
+                    • Use zoom slider on preview to adjust size
+                </p>
             </div>
 
             <div class="control-group">
@@ -944,6 +971,22 @@
                 const topVideo = document.getElementById('topVideo');
                 topVideo.src = videoPlayer.src;
                 topVideo.currentTime = videoPlayer.currentTime;
+                
+                // If no bottom media selected, prompt user
+                if (!bottomMedia) {
+                    document.getElementById('bottomHalf').innerHTML = `
+                        <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #1a1a1a;">
+                            <div style="text-align: center; color: #666;">
+                                <p style="margin-bottom: 10px;">No bottom media selected</p>
+                                <p style="font-size: 12px;">Choose an image or video from the controls panel</p>
+                            </div>
+                        </div>
+                        <div class="bottom-media-controls">
+                            <span class="zoom-label">Zoom:</span>
+                            <input type="range" id="bottomZoom" min="100" max="200" value="100" style="width: 100px;">
+                        </div>
+                    `;
+                }
             } else {
                 standardView.classList.remove('hidden');
                 splitScreenView.classList.add('hidden');
@@ -959,19 +1002,41 @@
             
             const url = URL.createObjectURL(file);
             
+            // Recreate bottom half with proper media element
+            const bottomHalf = document.getElementById('bottomHalf');
+            
             if (file.type.startsWith('image/')) {
                 bottomMediaType = 'image';
                 bottomMedia = file;
-                document.getElementById('bottomImage').src = url;
-                document.getElementById('bottomImage').style.display = 'block';
-                document.getElementById('bottomVideo').style.display = 'none';
+                bottomHalf.innerHTML = `
+                    <img id="bottomImage" src="${url}" style="width: 100%; height: 100%; object-fit: cover;" />
+                    <div class="bottom-media-controls">
+                        <span class="zoom-label">Zoom:</span>
+                        <input type="range" id="bottomZoom" min="100" max="200" value="${bottomZoom}" style="width: 100px;">
+                    </div>
+                `;
             } else if (file.type.startsWith('video/')) {
                 bottomMediaType = 'video';
                 bottomMedia = file;
-                document.getElementById('bottomVideo').src = url;
-                document.getElementById('bottomVideo').style.display = 'block';
-                document.getElementById('bottomImage').style.display = 'none';
+                bottomHalf.innerHTML = `
+                    <video id="bottomVideo" src="${url}" style="width: 100%; height: 100%; object-fit: cover;" controls></video>
+                    <div class="bottom-media-controls">
+                        <span class="zoom-label">Zoom:</span>
+                        <input type="range" id="bottomZoom" min="100" max="200" value="${bottomZoom}" style="width: 100px;">
+                    </div>
+                `;
+                
+                // Sync bottom video with top video
+                const bottomVideo = document.getElementById('bottomVideo');
+                const topVideo = document.getElementById('topVideo');
+                bottomVideo.currentTime = topVideo.currentTime;
+                if (!topVideo.paused) {
+                    bottomVideo.play();
+                }
             }
+            
+            // Reattach zoom event listener
+            document.getElementById('bottomZoom').addEventListener('input', updateBottomZoom);
         }
 
         // Update bottom media zoom
