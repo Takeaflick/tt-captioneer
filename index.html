@@ -906,6 +906,214 @@
                 captionOverlay.classList.add('dragging');
                 
                 const rect = videoWrapper.getBoundingClientRect();
+            const x = e.clientX - rect.left - dragOffset.x;
+            const y = e.clientY - rect.top - dragOffset.y;
+            
+            const xPercent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            const yPercent = Math.max(0, Math.min(100, (y / rect.height) * 100));
+            
+            document.getElementById('captionX').value = Math.round(xPercent);
+            document.getElementById('captionY').value = Math.round(yPercent);
+            
+            updateCaptionPosition();
+        }
+
+        function stopDragging() {
+            isDragging = false;
+            captionOverlay.classList.remove('dragging');
+        }
+
+        // Update functions
+        function updateFontSize(e) {
+            const size = e ? e.target.value : document.getElementById('fontSize').value;
+            document.getElementById('fontSizeValue').textContent = size;
+            captionText.style.fontSize = size + 'px';
+        }
+
+        function updateFontFamily(e) {
+            const font = e ? e.target.value : document.getElementById('fontFamily').value;
+            captionText.style.fontFamily = `'${font}', sans-serif`;
+        }
+
+        function updateCaptionPosition() {
+            const x = document.getElementById('captionX').value;
+            const y = document.getElementById('captionY').value;
+            captionOverlay.style.left = x + '%';
+            captionOverlay.style.top = y + '%';
+        }
+
+        function updateColors() {
+            captionText.style.backgroundColor = document.getElementById('bgColor').value;
+            captionText.style.color = document.getElementById('textColor').value;
+        }
+
+        // Logo handling
+        function handleLogoSelect(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    logoDataUrl = event.target.result;
+                    logoImage.src = logoDataUrl;
+                    logoOverlay.classList.remove('hidden');
+                    updateLogoPosition();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function updateLogoPosition() {
+            const position = document.getElementById('logoPosition').value;
+            logoOverlay.style.top = position.includes('top') ? '20px' : 'auto';
+            logoOverlay.style.bottom = position.includes('bottom') ? '20px' : 'auto';
+            logoOverlay.style.left = position.includes('left') ? '20px' : 'auto';
+            logoOverlay.style.right = position.includes('right') ? '20px' : 'auto';
+        }
+
+        function updateLogoSize(e) {
+            document.getElementById('logoSizeValue').textContent = e.target.value;
+            logoOverlay.style.width = e.target.value + 'px';
+            logoOverlay.style.height = e.target.value + 'px';
+        }
+
+        // Export video - improved version
+        async function exportVideo() {
+            if (captions.length === 0) {
+                alert('Please add at least one caption before exporting.');
+                return;
+            }
+            
+            processing.classList.remove('hidden');
+            
+            // Try WebM export with Canvas API (more reliable)
+            try {
+                await exportWithCanvas();
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Export failed. Please try again.');
+                processing.classList.add('hidden');
+            }
+        }
+
+        // Canvas-based export (WebM but reliable)
+        async function exportWithCanvas() {
+            processingText.textContent = 'Preparing video export...';
+            processingSubtext.textContent = 'Setting up canvas renderer';
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Use original video dimensions for export
+            canvas.width = videoPlayer.videoWidth;
+            canvas.height = videoPlayer.videoHeight;
+            
+            const stream = canvas.captureStream(30);
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'video/webm',
+                videoBitsPerSecond: 8000000 // Higher bitrate for better quality
+            });
+            
+            const chunks = [];
+            mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+            
+            mediaRecorder.onstop = () => {
+                processingText.textContent = 'Finalizing export...';
+                
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'tiktok-video-with-captions.webm';
+                a.click();
+                
+                processing.classList.add('hidden');
+                
+                // Inform user about conversion
+                setTimeout(() => {
+                    alert('Video exported as WebM format.\n\nTo convert to MP4 for TikTok:\n1. Use any online converter (search "WebM to MP4")\n2. Or use VLC Media Player\n3. Or use HandBrake (free software)');
+                }, 500);
+            };
+            
+            processingText.textContent = 'Recording video with captions...';
+            processingSubtext.textContent = 'Please wait, do not close this tab';
+            
+            mediaRecorder.start();
+            videoPlayer.currentTime = 0;
+            videoPlayer.play();
+            
+            // Calculate scale factors for accurate caption rendering
+            const scaleX = canvas.width / videoPlayer.videoWidth;
+            const scaleY = canvas.height / videoPlayer.videoHeight;
+            
+            function renderFrame() {
+                if (videoPlayer.paused || videoPlayer.ended) {
+                    mediaRecorder.stop();
+                    return;
+                }
+                
+                // Update progress
+                const progress = (videoPlayer.currentTime / videoPlayer.duration * 100).toFixed(1);
+                processingSubtext.textContent = `Processing: ${progress}%`;
+                
+                // Draw video frame
+                ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+                
+                // Check for active caption
+                const currentTime = videoPlayer.currentTime;
+                const activeCaption = captions.find(c => currentTime >= c.start && currentTime <= c.end);
+                
+                if (activeCaption) {
+                    // Calculate actual font size for canvas
+                    const actualFontSize = activeCaption.fontSize * 1.5; // Scale up for export
+                    
+                    ctx.font = `bold ${actualFontSize}px '${activeCaption.fontFamily}', sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
+                    const text = activeCaption.text;
+                    const metrics = ctx.measureText(text);
+                    const padding = actualFontSize * 0.6;
+                    const boxWidth = metrics.width + padding * 2;
+                    const boxHeight = actualFontSize + padding;
+                    
+                    // Calculate position
+                    const x = (canvas.width * activeCaption.x / 100);
+                    const y = (canvas.height * activeCaption.y / 100);
+                    
+                    const rectX = x - boxWidth / 2;
+                    const rectY = y - boxHeight / 2;
+                    
+                    // Draw rounded rectangle background
+                    ctx.fillStyle = activeCaption.bgColor;
+                    ctx.beginPath();
+                    const radius = 10;
+                    ctx.roundRect(rectX, rectY, boxWidth, boxHeight, radius);
+                    ctx.fill();
+                    
+                    // Draw text
+                    ctx.fillStyle = activeCaption.textColor;
+                    ctx.fillText(text, x, y);
+                }
+                
+                // Draw logo if present
+                if (logoDataUrl && logoImage.complete) {
+                    const size = parseInt(document.getElementById('logoSize').value) * 2; // Scale up for export
+                    const pos = document.getElementById('logoPosition').value;
+                    
+                    let logoX = pos.includes('left') ? 20 : canvas.width - size - 20;
+                    let logoY = pos.includes('top') ? 20 : canvas.height - size - 20;
+                    
+                    ctx.drawImage(logoImage, logoX, logoY, size, size);
+                }
+                
+                requestAnimationFrame(renderFrame);
+            }
+            
+            renderFrame();
+        }
+    </script>
+</body>
+</html>();
                 const captionRect = captionOverlay.getBoundingClientRect();
                 
                 dragOffset.x = e.clientX - captionRect.left - captionRect.width / 2;
